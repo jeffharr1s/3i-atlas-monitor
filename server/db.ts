@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, articles, sources, alerts, claims, userPreferences } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,98 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// Article queries
+export async function getLatestArticles(limit: number = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db
+    .select()
+    .from(articles)
+    .orderBy((t) => t.fetchedAt)
+    .limit(limit);
+}
+
+export async function getArticlesByCategory(category: string, limit: number = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db
+    .select()
+    .from(articles)
+    .where(eq(articles.category, category as any))
+    .orderBy((t) => t.fetchedAt)
+    .limit(limit);
+}
+
+export async function getArticlesBySource(sourceId: number, limit: number = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db
+    .select()
+    .from(articles)
+    .where(eq(articles.sourceId, sourceId))
+    .orderBy((t) => t.fetchedAt)
+    .limit(limit);
+}
+
+// Source queries
+export async function getActiveSources() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db
+    .select()
+    .from(sources)
+    .where(eq(sources.isActive, true));
+}
+
+export async function getSourceById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(sources)
+    .where(eq(sources.id, id))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+// Alert queries
+export async function getRecentAlerts(limit: number = 10) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db
+    .select()
+    .from(alerts)
+    .orderBy((t) => t.createdAt)
+    .limit(limit);
+}
+
+export async function getUnnotifiedAlerts() {
+  const db = await getDb();
+  if (!db) return [];
+  return await db
+    .select()
+    .from(alerts)
+    .where(eq(alerts.isNotified, false));
+}
+
+// Claim queries
+export async function getClaimsByArticle(articleId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db
+    .select()
+    .from(claims)
+    .where(eq(claims.articleId, articleId));
+}
+
+// User preference queries
+export async function getUserPreferences(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(userPreferences)
+    .where(eq(userPreferences.userId, userId))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
