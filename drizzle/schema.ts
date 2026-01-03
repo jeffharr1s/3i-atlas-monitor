@@ -138,9 +138,61 @@ export const userPreferences = mysqlTable("userPreferences", {
   enableAlerts: boolean("enableAlerts").default(true),
   alertTypes: text("alertTypes"),
   preferredCategories: text("preferredCategories"),
+  doNotDisturbMode: boolean("doNotDisturbMode").default(false),
+  doNotDisturbStart: varchar("doNotDisturbStart", { length: 5 }),
+  doNotDisturbEnd: varchar("doNotDisturbEnd", { length: 5 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type UserPreference = typeof userPreferences.$inferSelect;
 export type InsertUserPreference = typeof userPreferences.$inferInsert;
+
+/**
+ * Notifications table: User notifications with persistence
+ */
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message"),
+  type: mysqlEnum("type", ["info", "success", "warning", "error", "article_new", "alert_triggered", "contradiction_found", "source_update"]).default("info"),
+  category: mysqlEnum("category", ["trajectory", "composition", "activity", "government_statement", "scientific_discovery", "speculation", "debunking", "international_perspective", "other"]),
+  severity: mysqlEnum("severity", ["low", "medium", "high", "critical"]).default("medium"),
+  sourceId: int("sourceId"),
+  articleId: int("articleId"),
+  isRead: boolean("isRead").default(false),
+  isDismissed: boolean("isDismissed").default(false),
+  actionUrl: varchar("actionUrl", { length: 500 }),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt"),
+});
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;
+
+/**
+ * Notification preferences table: Per-user notification settings
+ */
+export const notificationPreferences = mysqlTable("notificationPreferences", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  enableToastNotifications: boolean("enableToastNotifications").default(true),
+  enableNotificationCenter: boolean("enableNotificationCenter").default(true),
+  toastDuration: int("toastDuration").default(5000),
+  enableNewArticles: boolean("enableNewArticles").default(true),
+  enableAlerts: boolean("enableAlerts").default(true),
+  enableContradictions: boolean("enableContradictions").default(true),
+  enableSourceUpdates: boolean("enableSourceUpdates").default(true),
+  filterByCategory: text("filterByCategory"),
+  filterBySeverity: text("filterBySeverity"),
+  doNotDisturbEnabled: boolean("doNotDisturbEnabled").default(false),
+  doNotDisturbStart: varchar("doNotDisturbStart", { length: 5 }),
+  doNotDisturbEnd: varchar("doNotDisturbEnd", { length: 5 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type NotificationPreference = typeof notificationPreferences.$inferSelect;
+export type InsertNotificationPreference = typeof notificationPreferences.$inferInsert;

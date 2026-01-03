@@ -6,12 +6,14 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
+import NotificationSettings from "./pages/NotificationSettings";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
+      <Route path="/notification-settings" component={NotificationSettings} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
