@@ -56,7 +56,7 @@ export default function Home() {
               <Button
                 size="lg"
                 className="bg-blue-600 hover:bg-blue-700 text-white"
-                onClick={() => setLocation("/auth/login")}
+                onClick={() => setLocation("/dashboard")}
               >
                 Get Started
               </Button>
@@ -143,7 +143,7 @@ export default function Home() {
           <Button
             size="lg"
             className="bg-white text-blue-600 hover:bg-blue-50"
-            onClick={() => setLocation("/auth/login")}
+            onClick={() => setLocation("/dashboard")}
           >
             Sign In to Dashboard
           </Button>
