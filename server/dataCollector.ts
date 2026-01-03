@@ -1,6 +1,7 @@
-import { getDb } from './db';
 import { articles, sources, InsertArticle, InsertSource } from '../drizzle/schema';
 import { eq } from 'drizzle-orm';
+import { getDb } from './db';
+import { fetchAllArticles, checkAPIHealth } from './apiDataFetcher';
 
 /**
  * Data collector service for aggregating 3I ATLAS information from multiple sources
@@ -47,27 +48,27 @@ const DEFAULT_SOURCES: InsertSource[] = [
     isActive: true,
   },
   {
-    name: 'Universe Today',
-    url: 'https://www.universetoday.com',
-    sourceType: 'scientific_blog',
-    country: 'United States',
+    name: 'News API - Global News',
+    url: 'https://newsapi.org/',
+    sourceType: 'news_outlet',
+    country: 'International',
     credibilityScore: '0.80' as any,
-    description: 'Universe Today astronomy news and analysis',
+    description: 'Aggregated news from 150,000+ sources worldwide',
     isActive: true,
   },
   {
-    name: 'Sky & Telescope',
-    url: 'https://www.skyandtelescope.org',
+    name: 'Spaceflight News API',
+    url: 'https://api.spaceflightnewsapi.net/',
     sourceType: 'news_outlet',
-    country: 'United States',
-    credibilityScore: '0.85' as any,
-    description: 'Sky & Telescope astronomy magazine',
+    country: 'International',
+    credibilityScore: '0.88' as any,
+    description: 'Specialized spaceflight and astronomy news API',
     isActive: true,
   },
 ];
 
 /**
- * Initialize default sources in the database
+ * Initialize default sources in database
  */
 export async function initializeDefaultSources() {
   const db = await getDb();
@@ -77,6 +78,8 @@ export async function initializeDefaultSources() {
   }
 
   try {
+    console.log('[DataCollector] Initializing default sources...');
+
     for (const source of DEFAULT_SOURCES) {
       const existing = await db
         .select()
@@ -89,129 +92,92 @@ export async function initializeDefaultSources() {
         console.log(`[DataCollector] Added source: ${source.name}`);
       }
     }
+
+    console.log('[DataCollector] Default sources initialized');
   } catch (error) {
-    console.error('[DataCollector] Failed to initialize sources:', error);
+    console.error('[DataCollector] Error initializing sources:', error);
   }
 }
 
 /**
- * Add a new article to the database
+ * Store article in database
  */
-export async function addArticle(article: InsertArticle) {
+export async function storeArticle(
+  title: string,
+  summary: string | undefined,
+  url: string,
+  sourceId: number,
+  category: 'trajectory' | 'composition' | 'activity' | 'government_statement' | 'scientific_discovery' | 'speculation' | 'debunking' | 'international_perspective' | 'timeline_event' | 'other',
+  credibilityScore: number
+): Promise<void> {
   const db = await getDb();
   if (!db) {
     console.warn('[DataCollector] Database not available');
-    return null;
+    return;
   }
 
   try {
-    const result = await db.insert(articles).values(article);
-    return result;
-  } catch (error) {
-    console.error('[DataCollector] Failed to add article:', error);
-    return null;
-  }
-}
-
-/**
- * Check if article URL already exists in database
- */
-export async function articleExists(url: string): Promise<boolean> {
-  const db = await getDb();
-  if (!db) return false;
-
-  try {
-    const result = await db
+    // Check if article already exists
+    const existing = await db
       .select()
       .from(articles)
       .where(eq(articles.url, url))
       .limit(1);
-    return result.length > 0;
+
+    if (existing.length > 0) {
+      console.log(`[DataCollector] Article already exists: ${title}`);
+      return;
+    }
+
+    const newArticle: InsertArticle = {
+      title,
+      summary: summary || '',
+      url,
+      sourceId,
+      category,
+      credibilityScore: credibilityScore.toString() as any,
+      publishedAt: new Date(),
+      isAnalyzed: false,
+    };
+
+    await db.insert(articles).values(newArticle);
+    console.log(`[DataCollector] Stored article: ${title}`);
   } catch (error) {
-    console.error('[DataCollector] Failed to check article existence:', error);
-    return false;
+    console.error('[DataCollector] Error storing article:', error);
   }
 }
 
 /**
- * Fetch and parse RSS feed
+ * Categorize article based on content
  */
-export async function fetchRSSFeed(feedUrl: string): Promise<any[]> {
-  try {
-    const response = await fetch(feedUrl);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
+export function categorizeArticle(text: string): 'trajectory' | 'composition' | 'activity' | 'government_statement' | 'scientific_discovery' | 'speculation' | 'debunking' | 'international_perspective' | 'timeline_event' | 'other' {
+  const lowerText = text.toLowerCase();
 
-    const text = await response.text();
-    
-    const items: any[] = [];
-    const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-    let match;
-
-    while ((match = itemRegex.exec(text)) !== null) {
-      const itemContent = match[1];
-      const titleMatch = /<title>([\s\S]*?)<\/title>/.exec(itemContent);
-      const descriptionMatch = /<description>([\s\S]*?)<\/description>/.exec(itemContent);
-      const linkMatch = /<link>([\s\S]*?)<\/link>/.exec(itemContent);
-      const pubDateMatch = /<pubDate>([\s\S]*?)<\/pubDate>/.exec(itemContent);
-
-      if (titleMatch && linkMatch) {
-        items.push({
-          title: titleMatch[1].replace(/<[^>]*>/g, ''),
-          description: descriptionMatch ? descriptionMatch[1].replace(/<[^>]*>/g, '') : '',
-          link: linkMatch[1],
-          pubDate: pubDateMatch ? new Date(pubDateMatch[1]) : new Date(),
-        });
-      }
-    }
-
-    return items;
-  } catch (error) {
-    console.error(`[DataCollector] Failed to fetch RSS feed ${feedUrl}:`, error);
-    return [];
-  }
-}
-
-/**
- * Categorize article based on content - with priority ordering
- */
-export function categorizeArticle(title: string, content: string): string {
-  const text = `${title} ${content}`.toLowerCase();
-
-  if (text.includes('debunk') || text.includes('false') || text.includes('incorrect')) {
-    return 'debunking';
-  }
-  
-  if (text.includes('timeline') || text.includes('chronology') || text.includes('sequence')) {
-    return 'timeline_event';
-  }
-  
-  if (text.includes('china') || text.includes('russia') || text.includes('japan') || text.includes('india') || text.includes('international')) {
-    return 'international_perspective';
-  }
-  
-  if (text.includes('trajectory') || text.includes('orbit') || text.includes('path')) {
+  if (lowerText.includes('trajectory') || lowerText.includes('orbit') || lowerText.includes('path')) {
     return 'trajectory';
   }
-  
-  if (text.includes('composition') || text.includes('chemical') || text.includes('element')) {
+
+  if (lowerText.includes('composition') || lowerText.includes('chemical') || lowerText.includes('analysis')) {
     return 'composition';
   }
-  
-  if (text.includes('activity') || text.includes('outgassing') || text.includes('tail')) {
+
+  if (lowerText.includes('activity') || lowerText.includes('outgassing') || lowerText.includes('tail')) {
     return 'activity';
   }
-  
-  if (text.includes('government') || text.includes('statement') || text.includes('official')) {
+
+  if (lowerText.includes('government') || lowerText.includes('statement') || lowerText.includes('official')) {
     return 'government_statement';
   }
-  
-  if (text.includes('speculation') || text.includes('theory') || text.includes('claim')) {
+
+  if (lowerText.includes('debunk') || lowerText.includes('false') || lowerText.includes('refute')) {
+    return 'debunking';
+  }
+
+  if (lowerText.includes('speculation') || lowerText.includes('theory') || lowerText.includes('claim')) {
     return 'speculation';
   }
-  
-  if (text.includes('discovery') || text.includes('observation') || text.includes('telescope')) {
+
+  if (lowerText.includes('discovery') || lowerText.includes('observation') || lowerText.includes('telescope')) {
     return 'scientific_discovery';
   }
 
@@ -253,16 +219,101 @@ export async function calculateCredibilityScore(sourceId: number, category: stri
 }
 
 /**
- * Main data collection job - should be called periodically
+ * Main data collection job - fetches articles from all sources
  */
 export async function collectData() {
   console.log('[DataCollector] Starting data collection cycle...');
-  
+
   try {
+    // Initialize sources first
     await initializeDefaultSources();
+
+    // Fetch articles from all APIs
+    console.log('[DataCollector] Fetching articles from all sources...');
+    const allArticles = await fetchAllArticles();
+
+    if (allArticles.length === 0) {
+      console.warn('[DataCollector] No articles fetched from any source');
+      return;
+    }
+
+    console.log(`[DataCollector] Processing ${allArticles.length} articles...`);
+
+    const db = await getDb();
+    if (!db) {
+      console.warn('[DataCollector] Database not available');
+      return;
+    }
+
+    // Get sources from database
+    const sourcesList = await db.select().from(sources);
+    const sourceMap = new Map(sourcesList.map(s => [s.name, s.id]));
+
+    // Store articles
+    for (const article of allArticles) {
+      try {
+        // Find matching source or use default
+        let sourceId = sourceMap.get(article.source);
+
+        if (!sourceId) {
+          // Create new source if not found
+          const result = await db.insert(sources).values({
+            name: article.source,
+            url: article.url,
+            sourceType: 'news_outlet',
+            country: 'International',
+            credibilityScore: '0.75' as any,
+            description: `News source: ${article.source}`,
+            isActive: true,
+          });
+
+          // Get the inserted ID
+          const inserted = await db
+            .select()
+            .from(sources)
+            .where(eq(sources.name, article.source))
+            .limit(1);
+
+          sourceId = inserted[0]?.id;
+        }
+
+        if (!sourceId) {
+          console.warn(`[DataCollector] Could not find or create source: ${article.source}`);
+          continue;
+        }
+
+        // Categorize and calculate credibility
+        const category = categorizeArticle(
+          `${article.title} ${article.description || ''}`
+        );
+        const credibility = await calculateCredibilityScore(sourceId, category);
+
+        // Store article
+        await storeArticle(
+          article.title,
+          article.description || article.content,
+          article.url,
+          sourceId,
+          category,
+          credibility
+        );
+      } catch (error) {
+        console.error(`[DataCollector] Error processing article: ${article.title}`, error);
+      }
+    }
 
     console.log('[DataCollector] Data collection cycle completed');
   } catch (error) {
     console.error('[DataCollector] Data collection failed:', error);
   }
+}
+
+/**
+ * Check health of all data sources
+ */
+export async function checkDataSourceHealth() {
+  console.log('[DataCollector] Checking data source health...');
+  const health = await checkAPIHealth();
+  console.log('[DataCollector] API Health:', health);
+  return health;
 }
